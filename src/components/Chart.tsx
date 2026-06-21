@@ -32,11 +32,48 @@ interface ChartProps {
   currentPrice: number | null;
   interval?: string;
   symbolName?: string;
+  forceUp?: boolean;
+  activePosition?: { amount: number; investedAmount: number };
+  activePositionPnL?: number;
+  activePositionPnLPercent?: number;
 }
 
-export const Chart = ({ candles, currentPrice, interval = '1s', symbolName }: ChartProps) => {
+export const Chart = ({ 
+  candles, 
+  currentPrice, 
+  interval = '1s', 
+  symbolName,
+  forceUp,
+  activePosition,
+  activePositionPnL,
+  activePositionPnLPercent
+}: ChartProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const { width, height } = useResizeObserver(containerRef);
+
+  // Profit history trace state for .1 amount / active position tracking
+  const [profitHistory, setProfitHistory] = useState<{ time: number; value: number }[]>([]);
+
+  // Update real-time profit history
+  useEffect(() => {
+    let pnlPct = 0;
+    if (activePosition && activePosition.amount > 0) {
+      pnlPct = activePositionPnLPercent || 0;
+    } else {
+      // Idle simulated fluctuating yield curve for peak cosmetic realism
+      const lastVal = profitHistory.length > 0 ? profitHistory[profitHistory.length - 1].value : 0.45;
+      const noise = (Math.random() - 0.49) * 0.16; // gentle wave trend
+      pnlPct = Math.max(-0.5, Math.min(3.5, lastVal + noise));
+    }
+
+    setProfitHistory((prev) => {
+      const next = [...prev, { time: Date.now(), value: pnlPct }];
+      if (next.length > 40) {
+        next.shift();
+      }
+      return next;
+    });
+  }, [currentPrice, activePositionPnLPercent, activePosition?.amount]);
 
   const RIGHT_AXIS_WIDTH = 75;
   const BOTTOM_AXIS_HEIGHT = 22;
@@ -635,6 +672,87 @@ export const Chart = ({ candles, currentPrice, interval = '1s', symbolName }: Ch
           })}
         </svg>
       )}
+
+      {/* 📊 QUANTUM ALGO PROFIT TERMINAL OVERLAY */}
+      <div className="absolute bottom-16 sm:bottom-4 left-4 z-40 bg-[#0E131F]/90 backdrop-blur-md border border-gray-800/80 p-2.5 xs:p-3 rounded-lg flex flex-col space-y-1.5 pointer-events-auto w-[200px] xs:w-[240px] select-none shadow-xl">
+        <div className="flex items-center justify-between space-x-2">
+          <div className="flex items-center space-x-1.5">
+            <span className={`h-1.5 w-1.5 rounded-full ${forceUp ? 'bg-indigo-400 animate-ping' : 'bg-emerald-500 animate-pulse'}`} />
+            <span className="text-[8px] xs:text-[9px] font-extrabold text-gray-400 tracking-wider font-mono">
+              {forceUp ? '⚡ .1 ALGO BOOST' : '📊 PROFIT FLOW'}
+            </span>
+          </div>
+          <span className="text-[8px] font-mono font-bold text-cyan-400 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-500/10">
+            {activePosition && activePosition.amount > 0 ? 'REAL TIME' : 'SIMULATION'}
+          </span>
+        </div>
+
+        <div className="flex items-baseline justify-between select-none">
+          <span className="text-[8px] xs:text-[9px] text-gray-500 font-semibold uppercase tracking-wider">
+            {activePosition && activePosition.amount > 0 ? 'Active Position PnL' : 'QUANTUM YIELD'}
+          </span>
+          <div className="flex flex-col items-end">
+            <span className={`text-xs xs:text-sm font-black font-mono leading-none ${
+              (activePosition && activePosition.amount > 0 ? (activePositionPnL || 0) : (profitHistory[profitHistory.length - 1]?.value || 0)) >= 0
+                ? 'text-emerald-400'
+                : 'text-rose-500'
+            }`}>
+              {activePosition && activePosition.amount > 0 
+                ? `${(activePositionPnL || 0) >= 0 ? '+' : ''}${(activePositionPnL || 0).toFixed(2)} USDT`
+                : `${(profitHistory[profitHistory.length - 1]?.value || 0) >= 0 ? '+' : ''}${(profitHistory[profitHistory.length - 1]?.value || 0).toFixed(2)}%`
+              }
+            </span>
+            {activePosition && activePosition.amount > 0 && (
+              <span className={`text-[8px] xs:text-[9px] font-bold font-mono ${activePositionPnLPercent && activePositionPnLPercent >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
+                {(activePositionPnLPercent || 0) >= 0 ? '▲' : '▼'} {(activePositionPnLPercent || 0).toFixed(2)}%
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Real-time elegant SVG sparkline */}
+        <div className="h-10 w-full bg-gray-950/45 rounded border border-gray-900 overflow-hidden relative flex items-end">
+          {profitHistory.length > 1 && (() => {
+            const width = 240;
+            const height = 40;
+            const values = profitHistory.map(h => h.value);
+            const minV = Math.min(...values) - 0.05;
+            const maxV = Math.max(...values) + 0.05;
+            const range = Math.max(0.1, maxV - minV);
+            
+            const points = profitHistory.map((pt, index) => {
+              const xCoord = (index / (profitHistory.length - 1)) * width;
+              const yCoord = height - ((pt.value - minV) / range) * height;
+              return `${xCoord},${yCoord}`;
+            }).join(' ');
+
+            const areaPoints = `${points} ${width},${height} 0,${height}`;
+
+            const glowColor = forceUp ? '#818cf8' : '#34d399';
+            const strokeColor = forceUp ? '#6366f1' : '#10b981';
+
+            return (
+              <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="absolute inset-0">
+                <defs>
+                  <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={glowColor} stopOpacity="0.25" />
+                    <stop offset="100%" stopColor={glowColor} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <polygon points={areaPoints} fill="url(#profitGrad)" />
+                <polyline
+                  fill="none"
+                  stroke={strokeColor}
+                  strokeWidth="1.8"
+                  points={points}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            );
+          })()}
+        </div>
+      </div>
     </div>
   );
 };

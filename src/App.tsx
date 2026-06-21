@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useBinance } from './hooks/useBinance';
 import { Chart } from './components/Chart';
-import { AssetConfig, Position } from './types';
+import { AssetConfig, Position, TradeRecord } from './types';
 import { 
   Activity, 
   Wallet, 
@@ -18,7 +18,8 @@ import {
   Grid, 
   ChevronDown,
   RefreshCw,
-  Info
+  Info,
+  History
 } from 'lucide-react';
 
 const ASSETS: AssetConfig[] = [
@@ -45,8 +46,18 @@ interface TickerStats {
 }
 
 export default function App() {
-  const [selectedAsset, setSelectedAsset] = useState<AssetConfig>(ASSETS[0]);
-  const [selectedInterval, setSelectedInterval] = useState<string>('1s');
+  const [selectedAsset, setSelectedAsset] = useState<AssetConfig>(() => {
+    const saved = localStorage.getItem('apex_trader_selected_asset');
+    if (saved) {
+      const match = ASSETS.find(a => a.id === saved);
+      if (match) return match;
+    }
+    return ASSETS[0];
+  });
+  
+  const [selectedInterval, setSelectedInterval] = useState<string>(() => {
+    return localStorage.getItem('apex_trader_selected_interval') || '1s';
+  });
   
   // Cyber security platform lock configurations
   const [isLocked, setIsLocked] = useState(() => sessionStorage.getItem('apex_trader_unlocked') !== 'true');
@@ -59,13 +70,61 @@ export default function App() {
   const { candles, currentPrice } = useBinance(selectedAsset.id, selectedInterval, forceUp);
 
   // Cash / Portfolio state
-  const [cash, setCash] = useState<number>(100000); // Start with $100,000 virtual balance
-  const [positions, setPositions] = useState<{ [key: string]: Position }>({
-    btcusdt: { symbol: 'BTCUSDT', amount: 0, investedAmount: 0 },
-    ethusdt: { symbol: 'ETHUSDT', amount: 0, investedAmount: 0 },
-    solusdt: { symbol: 'SOLUSDT', amount: 0, investedAmount: 0 },
-    bnbusdt: { symbol: 'BNBUSDT', amount: 0, investedAmount: 0 },
+  const [cash, setCash] = useState<number>(() => {
+    const saved = localStorage.getItem('apex_trader_cash');
+    return saved ? parseFloat(saved) : 100000;
   });
+  const [positions, setPositions] = useState<{ [key: string]: Position }>(() => {
+    const saved = localStorage.getItem('apex_trader_positions');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.btcusdt) return parsed;
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    return {
+      btcusdt: { symbol: 'BTCUSDT', amount: 0, investedAmount: 0 },
+      ethusdt: { symbol: 'ETHUSDT', amount: 0, investedAmount: 0 },
+      solusdt: { symbol: 'SOLUSDT', amount: 0, investedAmount: 0 },
+      bnbusdt: { symbol: 'BNBUSDT', amount: 0, investedAmount: 0 },
+    };
+  });
+
+  // Persisted trade history log list
+  const [tradeHistory, setTradeHistory] = useState<TradeRecord[]>(() => {
+    const saved = localStorage.getItem('apex_trader_history');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return [];
+  });
+
+  const [sidebarTab, setSidebarTab] = useState<'orderbook' | 'history'>('orderbook');
+
+  // Sync state modifications back to durable localStorage
+  useEffect(() => {
+    localStorage.setItem('apex_trader_selected_asset', selectedAsset.id);
+  }, [selectedAsset]);
+
+  useEffect(() => {
+    localStorage.setItem('apex_trader_selected_interval', selectedInterval);
+  }, [selectedInterval]);
+
+  useEffect(() => {
+    localStorage.setItem('apex_trader_cash', cash.toString());
+  }, [cash]);
+
+  useEffect(() => {
+    localStorage.setItem('apex_trader_positions', JSON.stringify(positions));
+  }, [positions]);
+
+  useEffect(() => {
+    localStorage.setItem('apex_trader_history', JSON.stringify(tradeHistory));
+  }, [tradeHistory]);
 
   // Hot wallet deposit feedback
   const [isDepositing, setIsDepositing] = useState(false);
@@ -194,6 +253,20 @@ export default function App() {
         },
       };
     });
+
+    setTradeHistory((curr) => [
+      {
+        id: Math.random().toString(36).substring(2, 9).toUpperCase(),
+        timestamp: Date.now(),
+        symbol: selectedAsset.name,
+        type: 'BUY',
+        price: assetPrice,
+        amount: coinsToBuy,
+        total: amountUsdt,
+      },
+      ...curr,
+    ].slice(0, 50));
+
     setBuyUsdtInput('');
   };
 
@@ -219,6 +292,20 @@ export default function App() {
         },
       };
     });
+
+    setTradeHistory((curr) => [
+      {
+        id: Math.random().toString(36).substring(2, 9).toUpperCase(),
+        timestamp: Date.now(),
+        symbol: selectedAsset.name,
+        type: 'SELL',
+        price: assetPrice,
+        amount: coinsToSell,
+        total: cashValue,
+      },
+      ...curr,
+    ].slice(0, 50));
+
     setSellCoinInput('');
   };
 
@@ -325,7 +412,7 @@ export default function App() {
             <div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 mb-3 animate-pulse">
               <span className="text-xl font-bold font-mono tracking-tight">▲</span>
             </div>
-            <h2 className="text-base font-extrabold text-white tracking-widest uppercase mb-1">APEX TRADER</h2>
+            <h2 className="text-base font-extrabold text-white tracking-widest uppercase mb-1">ELZ TRADING DASHBOARD</h2>
             <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">TERMINAL SECURED - PIN REQUIRED</p>
           </div>
 
@@ -416,7 +503,7 @@ export default function App() {
               <Activity className="h-5 w-5 text-white animate-pulse" />
             </div>
             <div>
-              <h1 className="text-base font-extrabold tracking-tight text-white leading-none">ApexTrader</h1>
+              <h1 className="text-base font-extrabold tracking-tight text-white leading-none">ELZ Trading Dashboard</h1>
               <span className="text-[10px] text-cyan-400 font-mono font-medium tracking-widest uppercase">Live Platform</span>
             </div>
           </div>
@@ -638,7 +725,16 @@ export default function App() {
           {/* MAIN GRAPH EMBED AREA */}
           <div className="flex-1 p-4 relative min-h-0 flex flex-col">
             <div className="flex-1 w-full h-full min-h-0 relative">
-              <Chart candles={candles} currentPrice={currentPrice} interval={selectedInterval} symbolName={selectedAsset.name} />
+              <Chart 
+                candles={candles} 
+                currentPrice={currentPrice} 
+                interval={selectedInterval} 
+                symbolName={selectedAsset.name} 
+                forceUp={forceUp}
+                activePosition={activePosition}
+                activePositionPnL={activePositionPnL}
+                activePositionPnLPercent={activePositionPnLPercent}
+              />
             </div>
           </div>
         </main>
@@ -859,66 +955,142 @@ export default function App() {
                 {activePosition.amount > 0 && (activePositionPnL >= 0 ? '▲' : '▼')} {activePosition.amount > 0 ? activePositionPnLPercent.toFixed(2) : '0.00'}%
               </div>
             </div>
-          </div>
-
-          {/* 4. REAL-TIME DEPTH / SHIFTING ORDER BOOK CONTAINER */}
+                   {/* 4. REAL-TIME DEPTH / SHIFTING ORDER BOOK CONTAINER */}
           <div className="p-5 flex-1 flex flex-col min-h-[250px]">
-            <span className="text-xs font-bold text-gray-400 tracking-wider flex justify-between items-center uppercase mb-3.5">
-              <span>Order Book (Spot Limit)</span>
-              <span className="text-[9px] font-mono text-gray-550 capitalize flex items-center gap-1">
-                <div className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" /> Auto Depth
+            {/* Tab switch headers */}
+            <div className="flex border-b border-gray-900 pb-3 mb-3.5 justify-between items-center">
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => setSidebarTab('orderbook')}
+                  className={`text-xs font-bold tracking-wider uppercase transition-all ${
+                    sidebarTab === 'orderbook' ? 'text-white border-b-2 border-cyan-500 pb-1' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  Order Book
+                </button>
+                <button
+                  onClick={() => setSidebarTab('history')}
+                  className={`text-xs font-bold tracking-wider uppercase transition-all flex items-center space-x-1 ${
+                    sidebarTab === 'history' ? 'text-white border-b-2 border-cyan-500 pb-1' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  <span>Fill History</span>
+                  {tradeHistory.length > 0 && (
+                    <span className="h-4 px-1 bg-cyan-950 text-cyan-400 border border-cyan-500/20 rounded text-[9px] font-mono flex items-center justify-center font-bold">
+                      {tradeHistory.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+              <span className="text-[9px] font-mono text-gray-550 capitalize flex items-center gap-1 shrink-0">
+                <div className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" /> Live
               </span>
-            </span>
-
-            {/* Depth Chart Panel with green/red bars */}
-            <div className="flex-1 flex flex-col justify-between text-xs font-mono select-none">
-              
-              {/* ASKS (RED SIDE, TOP DOWN OVERVIEW) */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] text-gray-500 font-bold border-b border-gray-900/50 pb-1 uppercase font-sans">
-                  <span>Price (USDT)</span>
-                  <span>Size ({selectedAsset.base})</span>
-                  <span className="text-right">Total ({selectedAsset.base})</span>
-                </div>
-                
-                {orderBookData.asks.map((ask, i) => {
-                  const percentWidth = Math.min(100, (ask.total / orderBookData.asks[orderBookData.asks.length - 1].total) * 100);
-                  return (
-                    <div key={`ask-${i}`} className="relative flex justify-between items-center h-5">
-                      <div className="absolute top-0 bottom-0 right-0 bg-rose-500/5 transition-all" style={{ width: `${percentWidth}%` }} />
-                      <span className="text-[11px] text-rose-450 font-bold z-10">{ask.price.toFixed(2)}</span>
-                      <span className="text-gray-300 text-[10px] z-10">{ask.size.toFixed(4)}</span>
-                      <span className="text-gray-500 text-[10px] text-right z-10">{ask.total.toFixed(2)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* SPREAD TACTICS BAR */}
-              <div className="my-2 py-1 border-y border-gray-900 bg-gray-950/40 text-center flex justify-between items-center px-2">
-                <span className="text-[10px] text-gray-500 font-bold uppercase font-sans">Spread (0.01%)</span>
-                <span className="text-xs font-bold font-mono text-white animate-pulse">
-                  {activeRefPrice > 0 ? activeRefPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '...'}
-                </span>
-                <span className="text-[10px] text-[#A0E040] font-mono font-medium">${(activeRefPrice * 0.0003).toFixed(2)}</span>
-              </div>
-
-              {/* BIDS (GREEN SIDE, BOTTOM UP OVERVIEW) */}
-              <div className="space-y-1">
-                {orderBookData.bids.map((bid, i) => {
-                  const percentWidth = Math.min(100, (bid.total / orderBookData.bids[orderBookData.bids.length - 1].total) * 100);
-                  return (
-                    <div key={`bid-${i}`} className="relative flex justify-between items-center h-5">
-                      <div className="absolute top-0 bottom-0 right-0 bg-emerald-500/5 transition-all" style={{ width: `${percentWidth}%` }} />
-                      <span className="text-[11px] text-emerald-450 font-bold z-10">{bid.price.toFixed(2)}</span>
-                      <span className="text-gray-300 text-[10px] z-10">{bid.size.toFixed(4)}</span>
-                      <span className="text-gray-500 text-[10px] text-right z-10">{bid.total.toFixed(2)}</span>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
-          </div>
+
+            {sidebarTab === 'orderbook' ? (
+              /* Depth Chart Panel with green/red bars */
+              <div className="flex-1 flex flex-col justify-between text-xs font-mono select-none">
+                
+                {/* ASKS (RED SIDE, TOP DOWN OVERVIEW) */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-gray-500 font-bold border-b border-gray-900/50 pb-1 uppercase font-sans">
+                    <span>Price (USDT)</span>
+                    <span>Size ({selectedAsset.base})</span>
+                    <span className="text-right">Total ({selectedAsset.base})</span>
+                  </div>
+                  
+                  {orderBookData.asks.map((ask, i) => {
+                    const percentWidth = Math.min(100, (ask.total / orderBookData.asks[orderBookData.asks.length - 1].total) * 100);
+                    return (
+                      <div key={`ask-${i}`} className="relative flex justify-between items-center h-5">
+                        <div className="absolute top-0 bottom-0 right-0 bg-rose-500/5 transition-all" style={{ width: `${percentWidth}%` }} />
+                        <span className="text-[11px] text-rose-450 font-bold z-10">{ask.price.toFixed(2)}</span>
+                        <span className="text-gray-300 text-[10px] z-10">{ask.size.toFixed(4)}</span>
+                        <span className="text-gray-500 text-[10px] text-right z-10">{ask.total.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* SPREAD TACTICS BAR */}
+                <div className="my-2 py-1 border-y border-gray-900 bg-gray-950/40 text-center flex justify-between items-center px-2">
+                  <span className="text-[10px] text-gray-550 font-bold uppercase font-sans">Spread (0.01%)</span>
+                  <span className="text-xs font-bold font-mono text-white animate-pulse">
+                    {activeRefPrice > 0 ? activeRefPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '...'}
+                  </span>
+                  <span className="text-[10px] text-[#A0E040] font-mono font-medium">${(activeRefPrice * 0.0003).toFixed(2)}</span>
+                </div>
+
+                {/* BIDS (GREEN SIDE, BOTTOM UP OVERVIEW) */}
+                <div className="space-y-1">
+                  {orderBookData.bids.map((bid, i) => {
+                    const percentWidth = Math.min(100, (bid.total / orderBookData.bids[orderBookData.bids.length - 1].total) * 100);
+                    return (
+                      <div key={`bid-${i}`} className="relative flex justify-between items-center h-5">
+                        <div className="absolute top-0 bottom-0 right-0 bg-emerald-500/5 transition-all" style={{ width: `${percentWidth}%` }} />
+                        <span className="text-[11px] text-emerald-450 font-bold z-10">{bid.price.toFixed(2)}</span>
+                        <span className="text-gray-300 text-[10px] z-10">{bid.size.toFixed(4)}</span>
+                        <span className="text-gray-500 text-[10px] text-right z-10">{bid.total.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              /* Trade History / Fill logs representation */
+              <div className="flex-1 flex flex-col min-h-0 text-xs font-mono overflow-y-auto max-h-[300px] pr-1 scrollbar-thin scrollbar-thumb-gray-900">
+                {tradeHistory.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-2 select-none self-center my-auto">
+                    <History className="h-8 w-8 text-gray-700 animate-pulse" />
+                    <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">No Filled Orders</span>
+                    <p className="text-[9px] text-gray-600 max-w-[180px] leading-relaxed">
+                      Initialize standard buy/sell execution parameters in the trade tab to build a diagnostic trace.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[9px] text-gray-550 border-b border-gray-900/65 pb-1 font-sans mr-1 uppercase font-bold select-none">
+                      <span>TIME / TXID</span>
+                      <span className="text-center">PRICE / AMOUNT</span>
+                      <span className="text-right">TOTAL</span>
+                    </div>
+                    {tradeHistory.map((item) => (
+                      <div 
+                        key={item.id} 
+                        className="flex justify-between items-center p-2 rounded bg-gray-950/30 border border-gray-900/35 hover:bg-gray-950/60 transition-colors"
+                      >
+                        <div className="flex flex-col space-y-0.5">
+                          <span className={`text-[9px] font-bold tracking-tight inline-flex items-center space-x-1 ${item.type === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <span>{item.type}</span>
+                            <span className="text-[8px] text-gray-400 font-normal">({item.symbol.split('/')[0]})</span>
+                          </span>
+                          <span className="text-[8px] text-gray-650 tracking-wider">
+                            {new Date(item.timestamp).toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] text-slate-300 font-bold">
+                            ${item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <span className="text-[9px] text-gray-550 text-center">
+                            {item.amount.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10.5px] text-gray-100 font-bold">
+                            ${item.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <span className="text-[7.5px] text-gray-600 uppercase font-sans">
+                            #{item.id}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>   </div>
         </aside>
       </div>
     </div>

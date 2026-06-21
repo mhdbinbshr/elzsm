@@ -13,6 +13,16 @@ export interface Position {
   investedAmount: number;
 }
 
+export interface TradeRecord {
+  id: string;
+  timestamp: number;
+  symbol: string;
+  type: 'BUY' | 'SELL';
+  price: number;
+  amount: number;
+  total: number;
+}
+
 export interface AssetConfig {
   id: string;      // e.g. "btcusdt"
   name: string;    // e.g. "BTC/USDT"
