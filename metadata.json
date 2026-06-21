@@ -1,0 +1,6 @@
+{
+  "name": "Live Crypto Trader",
+  "description": "A realistic live trading simulation with live candles and real-time profit/loss tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
