@@ -60,7 +60,7 @@ export default function App() {
   });
   
   // Cyber security platform lock configurations
-  const [isLocked, setIsLocked] = useState(() => sessionStorage.getItem('apex_trader_unlocked') !== 'true');
+  const [isLocked, setIsLocked] = useState(true);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [forceUp, setForceUp] = useState<boolean>(false);
@@ -371,7 +371,6 @@ export default function App() {
     if (e) e.preventDefault();
     if (passwordInput === 'elz777') {
       setPasswordError(false);
-      sessionStorage.setItem('apex_trader_unlocked', 'true');
       setIsLocked(false);
     } else {
       setPasswordError(true);
