@@ -189,7 +189,9 @@ export function useBinance(symbol = 'btcusdt', interval = '1s', forceUp = false)
         // Keep local reference to clear in useEffect
         (ws as any)._tickInterval = tickInterval;
       })
-      .catch(err => console.error("Error fetching binance data", err));
+      .catch(err => {
+        // Binance API might block Cloud Run IPs or CORS, silently ignore and wait for websocket or mock
+      });
 
     return () => {
       isMounted = false;

@@ -46,28 +46,15 @@ interface TickerStats {
 }
 
 export default function App() {
-  const [selectedAsset, setSelectedAsset] = useState<AssetConfig>(() => {
-    const saved = localStorage.getItem('apex_trader_selected_asset');
-    if (saved) {
-      const match = ASSETS.find(a => a.id === saved);
-      if (match) return match;
-    }
-    return ASSETS[0];
-  });
-  
-  const [selectedInterval, setSelectedInterval] = useState<string>(() => {
-    return localStorage.getItem('apex_trader_selected_interval') || '1s';
-  });
-  
   // Cyber security platform lock configurations
-  const [isLocked, setIsLocked] = useState(true);
+  const [isLocked, setIsLocked] = useState(() => {
+    return localStorage.getItem('elz_is_locked') !== 'false';
+  });
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
+  const [authErrorMsg, setAuthErrorMsg] = useState('');
   const [forceUp, setForceUp] = useState<boolean>(false);
   const forceUpTimeoutRef = useRef<any>(null);
-
-  // Binance live candles and socket price
-  const { candles, currentPrice } = useBinance(selectedAsset.id, selectedInterval, forceUp);
 
   // Cash / Portfolio state
   const [cash, setCash] = useState<number>(() => {
@@ -80,9 +67,7 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.btcusdt) return parsed;
-      } catch (e) {
-        // Fallback below
-      }
+      } catch (e) {}
     }
     return {
       btcusdt: { symbol: 'BTCUSDT', amount: 0, investedAmount: 0 },
@@ -103,7 +88,18 @@ export default function App() {
     return [];
   });
 
-  const [sidebarTab, setSidebarTab] = useState<'orderbook' | 'history'>('orderbook');
+  const [selectedAsset, setSelectedAsset] = useState<AssetConfig>(() => {
+    const saved = localStorage.getItem('apex_trader_selected_asset');
+    if (saved) {
+      const match = ASSETS.find(a => a.id === saved);
+      if (match) return match;
+    }
+    return ASSETS[0];
+  });
+  
+  const [selectedInterval, setSelectedInterval] = useState<string>(() => {
+    return localStorage.getItem('apex_trader_selected_interval') || '1s';
+  });
 
   // Sync state modifications back to durable localStorage
   useEffect(() => {
@@ -125,6 +121,19 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('apex_trader_history', JSON.stringify(tradeHistory));
   }, [tradeHistory]);
+
+  const handleAssetSelect = (asset: AssetConfig) => {
+    setSelectedAsset(asset);
+  };
+
+  const handleIntervalSelect = (interval: string) => {
+    setSelectedInterval(interval);
+  };
+
+  // Binance live candles and socket price
+  const { candles, currentPrice } = useBinance(selectedAsset.id, selectedInterval, forceUp);
+
+  const [sidebarTab, setSidebarTab] = useState<'orderbook' | 'history'>('orderbook');
 
   // Hot wallet deposit feedback
   const [isDepositing, setIsDepositing] = useState(false);
@@ -211,7 +220,9 @@ export default function App() {
           });
         }
       })
-      .catch((err) => console.error('Error fetching 24h ticker info:', err));
+      .catch((err) => {
+        // Binance API might block Cloud Run IPs or CORS, silently ignore or use mock
+      });
   };
 
   useEffect(() => {
@@ -241,32 +252,31 @@ export default function App() {
 
     const coinsToBuy = amountUsdt / assetPrice;
 
-    setCash((c) => c - amountUsdt);
-    setPositions((prev) => {
-      const pos = prev[selectedAsset.id];
-      return {
-        ...prev,
-        [selectedAsset.id]: {
-          ...pos,
-          amount: pos.amount + coinsToBuy,
-          investedAmount: pos.investedAmount + amountUsdt,
-        },
-      };
-    });
-
-    setTradeHistory((curr) => [
-      {
-        id: Math.random().toString(36).substring(2, 9).toUpperCase(),
-        timestamp: Date.now(),
-        symbol: selectedAsset.name,
-        type: 'BUY',
-        price: assetPrice,
-        amount: coinsToBuy,
-        total: amountUsdt,
+    const newCash = cash - amountUsdt;
+    const pos = positions[selectedAsset.id];
+    const newPositions = {
+      ...positions,
+      [selectedAsset.id]: {
+        ...pos,
+        amount: pos.amount + coinsToBuy,
+        investedAmount: pos.investedAmount + amountUsdt,
       },
-      ...curr,
-    ].slice(0, 50));
+    };
 
+    const newRecord: TradeRecord = {
+      id: Math.random().toString(36).substring(2, 9).toUpperCase(),
+      timestamp: Date.now(),
+      symbol: selectedAsset.name,
+      type: 'BUY',
+      price: assetPrice,
+      amount: coinsToBuy,
+      total: amountUsdt,
+    };
+    const newHistory = [newRecord, ...tradeHistory].slice(0, 50);
+
+    setCash(newCash);
+    setPositions(newPositions);
+    setTradeHistory(newHistory);
     setBuyUsdtInput('');
   };
 
@@ -280,31 +290,31 @@ export default function App() {
     const cashValue = coinsToSell * assetPrice;
     const proportionSold = coinsToSell / currentPosition.amount;
 
-    setCash((c) => c + cashValue);
-    setPositions((prev) => {
-      const pos = prev[selectedAsset.id];
-      return {
-        ...prev,
-        [selectedAsset.id]: {
-          ...pos,
-          amount: Math.max(0, pos.amount - coinsToSell),
-          investedAmount: Math.max(0, pos.investedAmount - pos.investedAmount * proportionSold),
-        },
-      };
-    });
-
-    setTradeHistory((curr) => [
-      {
-        id: Math.random().toString(36).substring(2, 9).toUpperCase(),
-        timestamp: Date.now(),
-        symbol: selectedAsset.name,
-        type: 'SELL',
-        price: assetPrice,
-        amount: coinsToSell,
-        total: cashValue,
+    const newCash = cash + cashValue;
+    const pos = positions[selectedAsset.id];
+    const newPositions = {
+      ...positions,
+      [selectedAsset.id]: {
+        ...pos,
+        amount: Math.max(0, pos.amount - coinsToSell),
+        investedAmount: Math.max(0, pos.investedAmount - pos.investedAmount * proportionSold),
       },
-      ...curr,
-    ].slice(0, 50));
+    };
+
+    const newRecord: TradeRecord = {
+      id: Math.random().toString(36).substring(2, 9).toUpperCase(),
+      timestamp: Date.now(),
+      symbol: selectedAsset.name,
+      type: 'SELL',
+      price: assetPrice,
+      amount: coinsToSell,
+      total: cashValue,
+    };
+    const newHistory = [newRecord, ...tradeHistory].slice(0, 50);
+
+    setCash(newCash);
+    setPositions(newPositions);
+    setTradeHistory(newHistory);
 
     setSellCoinInput('');
   };
@@ -313,7 +323,7 @@ export default function App() {
   const handleDepositRefill = () => {
     setIsDepositing(true);
     setTimeout(() => {
-      setCash((c) => c + 25000);
+      setCash(cash + 25000);
       setIsDepositing(false);
     }, 600);
   };
@@ -367,18 +377,20 @@ export default function App() {
     return { bids, asks };
   }, [activeRefPrice]);
 
-  const handleUnlockSubmit = (e?: React.FormEvent) => {
+  const handleAuthSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (passwordInput === 'elz777') {
-      setPasswordError(false);
-      setIsLocked(false);
-    } else {
+    setAuthErrorMsg('');
+    setPasswordError(false);
+    
+    if (passwordInput !== 'elz777') {
+      setAuthErrorMsg('INVALID PIN');
       setPasswordError(true);
-      setTimeout(() => {
-        setPasswordError(false);
-        setPasswordInput('');
-      }, 700);
+      setTimeout(() => setPasswordError(false), 700);
+      return;
     }
+
+    localStorage.setItem('elz_is_locked', 'false');
+    setIsLocked(false);
   };
 
   if (isLocked) {
@@ -400,11 +412,11 @@ export default function App() {
             scale: 1,
             x: passwordError ? [0, -8, 8, -6, 6, -4, 4, 0] : 0
           }}
-          transition={{ 
-            type: 'spring', 
-            stiffness: passwordError ? 800 : 100, 
-            damping: passwordError ? 12 : 15 
-          }}
+          transition={
+            passwordError
+              ? { duration: 0.4 }
+              : { type: 'spring', stiffness: 100, damping: 15 }
+          }
         >
           {/* Header */}
           <div className="text-center mb-6">
@@ -412,20 +424,20 @@ export default function App() {
               <span className="text-xl font-bold font-mono tracking-tight">▲</span>
             </div>
             <h2 className="text-base font-extrabold text-white tracking-widest uppercase mb-1">ELZ TRADING DASHBOARD</h2>
-            <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">TERMINAL SECURED - PIN REQUIRED</p>
+            <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">PRIVATE CLOUD AUTHENTICATION</p>
           </div>
 
-          <form onSubmit={handleUnlockSubmit} className="space-y-4">
-            {/* Input field */}
+          <form onSubmit={handleAuthSubmit} className="space-y-4">
+            {/* Password field */}
             <div className={`relative flex items-center bg-[#070A10] border ${passwordError ? 'border-rose-500/60 shadow-lg shadow-rose-950/15' : 'border-gray-800/60 focus-within:border-indigo-500/60'} rounded-xl overflow-hidden px-4 py-3.5 transition-all`}>
               <input
                 type="password"
-                placeholder="ENTER TERMINAL PASSKEY"
-                className="w-full bg-transparent text-center font-mono text-base tracking-[0.25em] text-white outline-none placeholder:text-gray-600 placeholder:text-xs placeholder:tracking-normal"
+                placeholder="ENTER SECURE PIN"
+                className="w-full bg-transparent text-center font-mono text-base tracking-[0.35em] text-white outline-none placeholder:text-gray-600 placeholder:text-xs placeholder:tracking-normal"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 autoFocus
-                maxLength={12}
+                maxLength={8}
               />
             </div>
 
@@ -436,7 +448,7 @@ export default function App() {
                 animate={{ opacity: 1 }} 
                 className="text-[10px] font-mono text-rose-400 font-bold tracking-widest text-center uppercase"
               >
-                🔓 PASSKEY REJECTED. RETRY.
+                {authErrorMsg ? `🔓 ${authErrorMsg.toUpperCase()}` : '🔓 PIN REJECTED. RETRY.'}
               </motion.p>
             )}
 
@@ -458,9 +470,9 @@ export default function App() {
                   if (key === 'CLR') {
                     setPasswordInput('');
                   } else if (key === 'OK') {
-                    handleUnlockSubmit();
+                    handleAuthSubmit();
                   } else {
-                    if (passwordInput.length < 12) {
+                    if (passwordInput.length < 8) {
                       setPasswordInput(prev => prev + key.toLowerCase());
                     }
                   }
@@ -478,11 +490,10 @@ export default function App() {
                 );
               })}
             </div>
-
-            {/* Visual Instructions */}
+            
             <div className="pt-2 text-center">
               <span className="text-[9px] text-gray-600 font-mono uppercase tracking-wider">
-                Authorized operators only. Standard typing keyboard supported.
+                Enter private PIN to securely access your cloud terminal.
               </span>
             </div>
           </form>
@@ -537,18 +548,29 @@ export default function App() {
             </div>
           </div>
 
-          <button 
-            disabled={isDepositing}
-            onClick={handleDepositRefill}
-            className="h-8 sm:h-9 px-3 sm:px-4.5 rounded-lg bg-indigo-600 hover:bg-indigo-750 disabled:bg-gray-800 border border-indigo-500/25 flex items-center space-x-1.5 sm:space-x-2 text-[10px] sm:text-xs font-semibold text-white tracking-wide shadow-md shadow-indigo-900/20 active:scale-95 transition-all shrink-0"
-          >
-            {isDepositing ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin text-white" />
-            ) : (
-              <Wallet className="h-3.5 w-3.5 text-indigo-200" />
-            )}
-            <span>{isDepositing ? 'Depositing...' : 'Refill +$25k'}</span>
-          </button>
+          <div className="flex gap-2">
+            <button 
+              disabled={isDepositing}
+              onClick={handleDepositRefill}
+              className="h-8 sm:h-9 px-3 sm:px-4.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-800 border border-indigo-500/25 flex items-center space-x-1.5 sm:space-x-2 text-[10px] sm:text-xs font-semibold text-white tracking-wide shadow-md shadow-indigo-900/20 active:scale-95 transition-all shrink-0"
+            >
+              {isDepositing ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-white" />
+              ) : (
+                <Wallet className="h-3.5 w-3.5 text-indigo-200" />
+              )}
+              <span className="whitespace-nowrap">{isDepositing ? 'Depositing...' : 'Refill +$25k'}</span>
+            </button>
+            <button 
+              onClick={() => {
+                localStorage.setItem('elz_is_locked', 'true');
+                setIsLocked(true);
+              }}
+              className="h-8 sm:h-9 px-3 sm:px-4.5 rounded-lg bg-gray-900 hover:bg-gray-800 border border-gray-800/40 flex items-center text-[10px] sm:text-xs font-semibold text-gray-400 hover:text-white transition-all shrink-0 whitespace-nowrap"
+            >
+              SIGN OUT
+            </button>
+          </div>
         </div>
       </header>
 

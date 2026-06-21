@@ -1,0 +1,25 @@
+{
+  "collections": [
+    {
+      "name": "users",
+      "schema": {
+        "cash": "number",
+        "selectedAsset": "string",
+        "selectedInterval": "string"
+      },
+      "subcollections": [
+        {
+          "name": "tradeHistory",
+          "schema": {
+            "timestamp": "number",
+            "symbol": "string",
+            "type": "string",
+            "price": "number",
+            "amount": "number",
+            "total": "number"
+          }
+        }
+      ]
+    }
+  ]
+}
