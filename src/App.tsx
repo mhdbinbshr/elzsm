@@ -47,9 +47,7 @@ interface TickerStats {
 
 export default function App() {
   // Cyber security platform lock configurations
-  const [isLocked, setIsLocked] = useState(() => {
-    return localStorage.getItem('elz_is_locked') !== 'false';
-  });
+  const [isLocked, setIsLocked] = useState(true);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [authErrorMsg, setAuthErrorMsg] = useState('');
@@ -389,7 +387,6 @@ export default function App() {
       return;
     }
 
-    localStorage.setItem('elz_is_locked', 'false');
     setIsLocked(false);
   };
 
@@ -563,7 +560,6 @@ export default function App() {
             </button>
             <button 
               onClick={() => {
-                localStorage.setItem('elz_is_locked', 'true');
                 setIsLocked(true);
               }}
               className="h-8 sm:h-9 px-3 sm:px-4.5 rounded-lg bg-gray-900 hover:bg-gray-800 border border-gray-800/40 flex items-center text-[10px] sm:text-xs font-semibold text-gray-400 hover:text-white transition-all shrink-0 whitespace-nowrap"
